@@ -1,0 +1,470 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>HF Space 保活面板</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<style>
+  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif; }
+  .badge { font-size: 11px; padding: 2px 8px; border-radius: 999px; font-weight: 600; }
+  .badge-ok { background: #dcfce7; color: #166534; }
+  .badge-restart { background: #dbeafe; color: #1e40af; }
+  .badge-error { background: #fee2e2; color: #991b1b; }
+  .badge-disabled { background: #e5e7eb; color: #4b5563; }
+  .badge-pending { background: #fef3c7; color: #92400e; }
+  .drawer { transition: transform .25s ease; }
+  .drawer.closed { transform: translateX(100%); }
+</style>
+</head>
+<body class="bg-slate-50 text-slate-800 min-h-screen">
+
+<!-- ===== Login View ===== -->
+<section id="view-login" class="hidden min-h-screen flex items-center justify-center px-4">
+  <form id="login-form" class="bg-white rounded-2xl shadow-md p-8 w-full max-w-sm">
+    <h1 class="text-2xl font-bold mb-1">HF Space 保活</h1>
+    <p class="text-sm text-slate-500 mb-6">请输入管理员密码登录</p>
+    <input type="password" id="login-password" required autofocus
+           class="w-full px-4 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
+           placeholder="密码" />
+    <p id="login-error" class="text-sm text-red-600 mt-2 hidden"></p>
+    <button type="submit"
+            class="mt-4 w-full bg-indigo-600 hover:bg-indigo-700 text-white font-semibold py-2 rounded-lg transition">登录</button>
+  </form>
+</section>
+
+<!-- ===== Main View ===== -->
+<section id="view-main" class="hidden">
+  <header class="bg-white border-b border-slate-200">
+    <div class="max-w-5xl mx-auto px-4 py-4 flex items-center justify-between">
+      <h1 class="text-xl font-bold flex items-center gap-2">
+        <span class="inline-block w-2 h-2 bg-green-500 rounded-full"></span>
+        HF Space 保活面板
+      </h1>
+      <div class="flex items-center gap-2">
+        <button id="btn-settings" title="设置" class="p-2 rounded-lg hover:bg-slate-100">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+        </button>
+        <button id="btn-logout" class="text-sm text-slate-600 hover:text-slate-900 px-3 py-2 rounded-lg hover:bg-slate-100">登出</button>
+      </div>
+    </div>
+  </header>
+
+  <main class="max-w-5xl mx-auto px-4 py-6">
+    <div id="space-empty" class="hidden text-center py-20 text-slate-400">
+      <p class="text-lg mb-2">还没有添加 HF Space</p>
+      <p class="text-sm">点击右下角 + 按钮添加第一个</p>
+    </div>
+    <div id="space-grid" class="grid grid-cols-1 md:grid-cols-2 gap-4"></div>
+  </main>
+
+  <button id="btn-add" title="添加 Space"
+          class="fixed bottom-6 right-6 w-14 h-14 bg-indigo-600 hover:bg-indigo-700 text-white rounded-full shadow-lg flex items-center justify-center text-3xl font-light">
+    +
+  </button>
+</section>
+
+<!-- ===== Space Form Modal ===== -->
+<div id="modal-space" class="hidden fixed inset-0 bg-black/40 z-30 flex items-center justify-center px-4">
+  <form id="space-form" class="bg-white rounded-2xl shadow-xl p-6 w-full max-w-md">
+    <h2 id="space-form-title" class="text-lg font-bold mb-4">添加 Space</h2>
+    <input type="hidden" id="sf-id" />
+    <div class="space-y-3">
+      <label class="block">
+        <span class="text-sm font-medium">显示名称</span>
+        <input id="sf-name" type="text" class="mt-1 w-full px-3 py-2 border border-slate-300 rounded-lg" placeholder="可选, 留空用 ns/repo" />
+      </label>
+      <label class="block">
+        <span class="text-sm font-medium">Space URL 或路径 *</span>
+        <input id="sf-url" type="text" required
+               class="mt-1 w-full px-3 py-2 border border-slate-300 rounded-lg font-mono text-sm"
+               placeholder="user/space 或 https://user-space.hf.space" />
+        <span class="text-xs text-slate-500">支持三种格式：完整 URL、huggingface.co/spaces/ns/repo、ns/repo</span>
+      </label>
+      <label class="block">
+        <span class="text-sm font-medium">保活间隔（分钟）*</span>
+        <input id="sf-interval" type="number" min="1" max="1440" value="10" required
+               class="mt-1 w-full px-3 py-2 border border-slate-300 rounded-lg" />
+      </label>
+      <label class="flex items-center gap-2">
+        <input id="sf-enabled" type="checkbox" checked class="w-4 h-4" />
+        <span class="text-sm">启用</span>
+      </label>
+      <label class="flex items-center gap-2">
+        <input id="sf-autorestart" type="checkbox" class="w-4 h-4" />
+        <span class="text-sm">检测到 sleep 时自动 restart（需配置 HF Token）</span>
+      </label>
+    </div>
+    <p id="space-form-error" class="text-sm text-red-600 mt-3 hidden"></p>
+    <div class="flex justify-end gap-2 mt-5">
+      <button type="button" data-close="modal-space" class="px-4 py-2 text-slate-600 hover:bg-slate-100 rounded-lg">取消</button>
+      <button type="submit" class="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg font-semibold">保存</button>
+    </div>
+  </form>
+</div>
+
+<!-- ===== Settings Modal ===== -->
+<div id="modal-settings" class="hidden fixed inset-0 bg-black/40 z-30 flex items-center justify-center px-4">
+  <form id="settings-form" class="bg-white rounded-2xl shadow-xl p-6 w-full max-w-md">
+    <h2 class="text-lg font-bold mb-4">设置</h2>
+    <label class="block mb-3">
+      <span class="text-sm font-medium">HuggingFace Token</span>
+      <input id="set-hftoken" type="password"
+             class="mt-1 w-full px-3 py-2 border border-slate-300 rounded-lg font-mono text-sm"
+             placeholder="hf_..." autocomplete="off" />
+      <span id="set-hftoken-hint" class="text-xs text-slate-500"></span>
+    </label>
+    <p class="text-xs text-slate-500">Token 需要 write 权限，仅在 autoRestart 功能下使用。保留为空可清除已保存的 token。</p>
+    <p id="settings-error" class="text-sm text-red-600 mt-3 hidden"></p>
+    <div class="flex justify-between mt-5">
+      <button type="button" id="btn-clear-token" class="px-4 py-2 text-red-600 hover:bg-red-50 rounded-lg">清除 Token</button>
+      <div class="flex gap-2">
+        <button type="button" data-close="modal-settings" class="px-4 py-2 text-slate-600 hover:bg-slate-100 rounded-lg">取消</button>
+        <button type="submit" class="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg font-semibold">保存</button>
+      </div>
+    </div>
+  </form>
+</div>
+
+<!-- ===== Logs Drawer ===== -->
+<div id="drawer-logs" class="drawer closed fixed top-0 right-0 w-full md:w-[480px] h-full bg-white shadow-2xl z-40 flex flex-col">
+  <header class="border-b border-slate-200 px-5 py-4 flex items-center justify-between">
+    <h3 class="font-bold">保活历史 <span id="drawer-title" class="font-normal text-slate-500"></span></h3>
+    <button data-close="drawer-logs" class="text-slate-400 hover:text-slate-700 text-2xl leading-none">&times;</button>
+  </header>
+  <div id="drawer-logs-body" class="flex-1 overflow-y-auto p-4 text-sm">
+    <p class="text-slate-400 text-center py-10">加载中...</p>
+  </div>
+</div>
+
+<script>
+// ---------- API wrapper ----------
+async function api(path, options = {}) {
+  const res = await fetch(path, {
+    ...options,
+    credentials: 'same-origin',
+    headers: {
+      'content-type': 'application/json',
+      ...(options.headers || {}),
+    },
+  });
+  if (res.status === 401) {
+    showLogin();
+    throw new Error('unauthorized');
+  }
+  if (!res.ok) {
+    let msg = res.statusText;
+    try {
+      const j = await res.json();
+      if (j.error) msg = j.error;
+    } catch {}
+    throw new Error(msg);
+  }
+  if (res.status === 204) return null;
+  return res.json();
+}
+
+// ---------- Views ----------
+const viewLogin = document.getElementById('view-login');
+const viewMain = document.getElementById('view-main');
+function showLogin() {
+  viewLogin.classList.remove('hidden');
+  viewMain.classList.add('hidden');
+  document.getElementById('login-password').value = '';
+  document.getElementById('login-error').classList.add('hidden');
+}
+function showMain() {
+  viewLogin.classList.add('hidden');
+  viewMain.classList.remove('hidden');
+  refreshSpaces();
+}
+
+async function init() {
+  try {
+    await api('/api/me');
+    showMain();
+  } catch {
+    showLogin();
+  }
+}
+
+// ---------- Login ----------
+document.getElementById('login-form').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const password = document.getElementById('login-password').value;
+  const err = document.getElementById('login-error');
+  err.classList.add('hidden');
+  try {
+    await api('/api/login', {
+      method: 'POST',
+      body: JSON.stringify({ password }),
+    });
+    showMain();
+  } catch (e) {
+    err.textContent = e.message || '登录失败';
+    err.classList.remove('hidden');
+  }
+});
+
+document.getElementById('btn-logout').addEventListener('click', async () => {
+  try { await api('/api/logout', { method: 'POST' }); } catch {}
+  showLogin();
+});
+
+// ---------- Modals ----------
+document.querySelectorAll('[data-close]').forEach((el) => {
+  el.addEventListener('click', () => {
+    const t = el.getAttribute('data-close');
+    document.getElementById(t).classList.add(t === 'drawer-logs' ? 'closed' : 'hidden');
+  });
+});
+
+// ---------- Space List ----------
+let spaces = [];
+let pollTimer = null;
+
+async function refreshSpaces() {
+  try {
+    spaces = await api('/api/spaces');
+    renderSpaces();
+  } catch (e) {
+    if (e.message !== 'unauthorized') console.error(e);
+  }
+}
+
+function startPolling() {
+  if (pollTimer) clearInterval(pollTimer);
+  pollTimer = setInterval(refreshSpaces, 30000);
+}
+
+function fmtRelative(ts) {
+  if (!ts) return '从未';
+  const diff = Date.now() - ts;
+  const s = Math.floor(diff / 1000);
+  if (s < 60) return `${s} 秒前`;
+  const m = Math.floor(s / 60);
+  if (m < 60) return `${m} 分钟前`;
+  const h = Math.floor(m / 60);
+  if (h < 24) return `${h} 小时前`;
+  return `${Math.floor(h / 24)} 天前`;
+}
+
+function badge(status, enabled) {
+  if (!enabled) return '<span class="badge badge-disabled">已停用</span>';
+  if (status === 'ok') return '<span class="badge badge-ok">正常</span>';
+  if (status === 'restart') return '<span class="badge badge-restart">已重启</span>';
+  if (status === 'error') return '<span class="badge badge-error">错误</span>';
+  return '<span class="badge badge-pending">等待中</span>';
+}
+
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, (c) => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
+  }[c]));
+}
+
+function renderSpaces() {
+  const grid = document.getElementById('space-grid');
+  const empty = document.getElementById('space-empty');
+  if (spaces.length === 0) {
+    grid.innerHTML = '';
+    empty.classList.remove('hidden');
+    return;
+  }
+  empty.classList.add('hidden');
+  grid.innerHTML = spaces.map((s) => `
+    <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-4">
+      <div class="flex items-start justify-between mb-2">
+        <div class="min-w-0 flex-1">
+          <div class="font-semibold truncate">${escapeHtml(s.name)}</div>
+          <a href="${escapeHtml(s.url)}" target="_blank" rel="noopener"
+             class="text-xs text-indigo-600 hover:underline font-mono break-all">${escapeHtml(s.url)}</a>
+        </div>
+        ${badge(s.lastStatus, s.enabled)}
+      </div>
+      <div class="text-xs text-slate-500 space-y-1 my-3">
+        <div>间隔: <span class="font-mono">${s.intervalMinutes}</span> 分钟${s.autoRestart ? ' · 自动重启' : ''}</div>
+        <div>上次保活: ${fmtRelative(s.lastRunAt)}</div>
+      </div>
+      <div class="flex gap-1 flex-wrap">
+        <button data-action="ping" data-id="${s.id}" class="text-xs px-2 py-1 bg-indigo-50 text-indigo-700 hover:bg-indigo-100 rounded">立即保活</button>
+        <button data-action="logs" data-id="${s.id}" class="text-xs px-2 py-1 bg-slate-50 text-slate-700 hover:bg-slate-100 rounded">日志</button>
+        <button data-action="edit" data-id="${s.id}" class="text-xs px-2 py-1 bg-slate-50 text-slate-700 hover:bg-slate-100 rounded">编辑</button>
+        <button data-action="toggle" data-id="${s.id}" class="text-xs px-2 py-1 bg-slate-50 text-slate-700 hover:bg-slate-100 rounded">${s.enabled ? '停用' : '启用'}</button>
+        <button data-action="delete" data-id="${s.id}" class="text-xs px-2 py-1 bg-red-50 text-red-700 hover:bg-red-100 rounded">删除</button>
+      </div>
+    </div>
+  `).join('');
+
+  grid.querySelectorAll('button[data-action]').forEach((btn) => {
+    btn.addEventListener('click', () => handleCardAction(btn.dataset.action, btn.dataset.id, btn));
+  });
+}
+
+async function handleCardAction(action, id, btn) {
+  const space = spaces.find((s) => s.id === id);
+  if (!space) return;
+  if (action === 'ping') {
+    btn.disabled = true;
+    btn.textContent = '保活中...';
+    try {
+      await api(`/api/spaces/${id}/ping`, { method: 'POST' });
+      await refreshSpaces();
+    } catch (e) {
+      alert('保活失败: ' + e.message);
+    } finally {
+      btn.disabled = false;
+      btn.textContent = '立即保活';
+    }
+  } else if (action === 'logs') {
+    openLogs(space);
+  } else if (action === 'edit') {
+    openSpaceForm(space);
+  } else if (action === 'toggle') {
+    try {
+      await api(`/api/spaces/${id}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ enabled: !space.enabled }),
+      });
+      await refreshSpaces();
+    } catch (e) { alert(e.message); }
+  } else if (action === 'delete') {
+    if (!confirm(`确认删除 "${space.name}"？此操作不可撤销。`)) return;
+    try {
+      await api(`/api/spaces/${id}`, { method: 'DELETE' });
+      await refreshSpaces();
+    } catch (e) { alert(e.message); }
+  }
+}
+
+// ---------- Space Form ----------
+const modalSpace = document.getElementById('modal-space');
+document.getElementById('btn-add').addEventListener('click', () => openSpaceForm());
+
+function openSpaceForm(space) {
+  document.getElementById('space-form-title').textContent = space ? '编辑 Space' : '添加 Space';
+  document.getElementById('sf-id').value = space?.id || '';
+  document.getElementById('sf-name').value = space?.name || '';
+  document.getElementById('sf-url').value = space?.url || '';
+  document.getElementById('sf-interval').value = space?.intervalMinutes ?? 10;
+  document.getElementById('sf-enabled').checked = space ? space.enabled : true;
+  document.getElementById('sf-autorestart').checked = space?.autoRestart || false;
+  document.getElementById('space-form-error').classList.add('hidden');
+  modalSpace.classList.remove('hidden');
+}
+
+document.getElementById('space-form').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const id = document.getElementById('sf-id').value;
+  const body = {
+    name: document.getElementById('sf-name').value.trim(),
+    url: document.getElementById('sf-url').value.trim(),
+    intervalMinutes: parseInt(document.getElementById('sf-interval').value, 10),
+    enabled: document.getElementById('sf-enabled').checked,
+    autoRestart: document.getElementById('sf-autorestart').checked,
+  };
+  const err = document.getElementById('space-form-error');
+  err.classList.add('hidden');
+  try {
+    if (id) {
+      await api(`/api/spaces/${id}`, { method: 'PATCH', body: JSON.stringify(body) });
+    } else {
+      await api('/api/spaces', { method: 'POST', body: JSON.stringify(body) });
+    }
+    modalSpace.classList.add('hidden');
+    await refreshSpaces();
+  } catch (e) {
+    err.textContent = e.message;
+    err.classList.remove('hidden');
+  }
+});
+
+// ---------- Settings ----------
+const modalSettings = document.getElementById('modal-settings');
+document.getElementById('btn-settings').addEventListener('click', async () => {
+  document.getElementById('set-hftoken').value = '';
+  document.getElementById('settings-error').classList.add('hidden');
+  try {
+    const cfg = await api('/api/config');
+    document.getElementById('set-hftoken-hint').textContent =
+      cfg.hasToken ? '已配置 token，留空提交将保留现有 token；输入新值将覆盖。' : '未配置 token';
+    document.getElementById('set-hftoken').placeholder = cfg.hasToken ? '已配置（输入以替换）' : 'hf_...';
+  } catch {}
+  modalSettings.classList.remove('hidden');
+});
+
+document.getElementById('settings-form').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const token = document.getElementById('set-hftoken').value.trim();
+  const err = document.getElementById('settings-error');
+  err.classList.add('hidden');
+  if (!token) {
+    // 空提交不动 token —— 直接关闭
+    modalSettings.classList.add('hidden');
+    return;
+  }
+  try {
+    await api('/api/config', { method: 'PUT', body: JSON.stringify({ hfToken: token }) });
+    modalSettings.classList.add('hidden');
+  } catch (e) {
+    err.textContent = e.message;
+    err.classList.remove('hidden');
+  }
+});
+
+document.getElementById('btn-clear-token').addEventListener('click', async () => {
+  if (!confirm('确认清除已保存的 HF Token？')) return;
+  try {
+    await api('/api/config', { method: 'PUT', body: JSON.stringify({ hfToken: '' }) });
+    modalSettings.classList.add('hidden');
+  } catch (e) { alert(e.message); }
+});
+
+// ---------- Logs Drawer ----------
+const drawerLogs = document.getElementById('drawer-logs');
+
+async function openLogs(space) {
+  document.getElementById('drawer-title').textContent = '· ' + space.name;
+  document.getElementById('drawer-logs-body').innerHTML = '<p class="text-slate-400 text-center py-10">加载中...</p>';
+  drawerLogs.classList.remove('closed');
+  try {
+    const logs = await api(`/api/spaces/${space.id}/logs`);
+    renderLogs(logs);
+  } catch (e) {
+    document.getElementById('drawer-logs-body').innerHTML =
+      `<p class="text-red-600 text-center py-10">加载失败: ${escapeHtml(e.message)}</p>`;
+  }
+}
+
+function renderLogs(logs) {
+  const body = document.getElementById('drawer-logs-body');
+  if (!logs || logs.length === 0) {
+    body.innerHTML = '<p class="text-slate-400 text-center py-10">尚无记录</p>';
+    return;
+  }
+  body.innerHTML = `
+    <table class="w-full text-xs">
+      <thead class="text-slate-500 border-b border-slate-200">
+        <tr><th class="text-left py-2 pr-2">时间</th><th class="text-left pr-2">动作</th><th class="text-left pr-2">状态</th><th class="text-left pr-2">耗时</th></tr>
+      </thead>
+      <tbody>
+        ${logs.map((l) => `
+          <tr class="border-b border-slate-100 align-top">
+            <td class="py-2 pr-2 whitespace-nowrap">${new Date(l.ts).toLocaleString()}</td>
+            <td class="pr-2">${escapeHtml(l.action)}</td>
+            <td class="pr-2">${l.httpStatus ?? l.stage ?? '-'}</td>
+            <td class="pr-2">${l.durationMs} ms</td>
+          </tr>
+          ${l.error ? `<tr class="border-b border-slate-100"><td colspan="4" class="pb-2 text-red-600">${escapeHtml(l.error)}</td></tr>` : ''}
+        `).join('')}
+      </tbody>
+    </table>
+  `;
+}
+
+// ---------- Boot ----------
+init();
+startPolling();
+</script>
+</body>
+</html>
