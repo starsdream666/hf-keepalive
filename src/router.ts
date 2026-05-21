@@ -12,6 +12,7 @@ import {
   getConfig,
   getLogs,
   getSpace,
+  getTaskLogs,
   hitRateLimit,
   listSpaces,
   putConfig,
@@ -56,6 +57,9 @@ export async function handleApi(
   }
   if (pathname === '/api/tick' && req.method === 'POST') {
     return jsonResponse(await runScheduler(env, Date.now()));
+  }
+  if (pathname === '/api/task-logs' && req.method === 'GET') {
+    return jsonResponse(await getTaskLogs(env));
   }
   if (pathname === '/api/spaces') {
     if (req.method === 'GET') return jsonResponse(await listSpaces(env));
@@ -141,6 +145,8 @@ async function handleCreateSpace(req: Request, env: Env): Promise<Response> {
     autoRestart: !!body.autoRestart,
     lastRunAt: null,
     lastStatus: null,
+    lastStage: null,
+    lastStageAt: null,
     createdAt: Date.now(),
   };
   await addSpace(env, space);

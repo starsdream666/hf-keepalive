@@ -56,6 +56,8 @@ export async function importSpacesFromHfToken(
       autoRestart: true,
       lastRunAt: null,
       lastStatus: null,
+      lastStage: null,
+      lastStageAt: null,
       createdAt: Date.now(),
     };
     await addSpace(env, space);

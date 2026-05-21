@@ -42,6 +42,7 @@
         HF Space 保活面板
       </h1>
       <div class="flex items-center gap-2">
+        <button id="btn-task-logs" class="text-sm text-slate-600 hover:text-slate-900 px-3 py-2 rounded-lg hover:bg-slate-100">任务日志</button>
         <button id="btn-settings" title="设置" class="p-2 rounded-lg hover:bg-slate-100">
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
         </button>
@@ -276,6 +277,45 @@ function badge(status, enabled) {
   return '<span class="badge badge-pending">等待中</span>';
 }
 
+function stageLabel(stage) {
+  if (!stage) return '未知';
+  const labels = {
+    RUNNING: 'running',
+    PAUSED: 'paused',
+    SLEEPING: 'sleeping',
+    RUNTIME_ERROR: 'runtime error',
+    APP_STARTING: 'starting',
+    RUNNING_APP_STARTING: '重启中',
+    BUILDING: '构建中',
+    RUNNING_BUILDING: '构建中',
+    STOPPED: 'stopped',
+    BUILD_ERROR: 'build error',
+    CONFIG_ERROR: 'config error',
+    NO_APP_FILE: 'no app file',
+    DELETING: 'deleting',
+  };
+  return labels[stage] || String(stage).toLowerCase().replaceAll('_', ' ');
+}
+
+function stageBadge(stage) {
+  if (!stage) return '<span class="badge badge-pending">未知</span>';
+  if (stage === 'RUNNING') return '<span class="badge badge-ok">running</span>';
+  if (['APP_STARTING', 'RUNNING_APP_STARTING', 'BUILDING', 'RUNNING_BUILDING'].includes(stage)) {
+    return `<span class="badge badge-restart">${stageLabel(stage)}</span>`;
+  }
+  if (['PAUSED', 'SLEEPING', 'STOPPED'].includes(stage)) {
+    return `<span class="badge badge-pending">${stageLabel(stage)}</span>`;
+  }
+  if (['RUNTIME_ERROR', 'BUILD_ERROR', 'CONFIG_ERROR', 'NO_APP_FILE'].includes(stage)) {
+    return `<span class="badge badge-error">${stageLabel(stage)}</span>`;
+  }
+  return `<span class="badge badge-disabled">${escapeHtml(stageLabel(stage))}</span>`;
+}
+
+function hfPageUrl(s) {
+  return `https://huggingface.co/spaces/${encodeURIComponent(s.namespace)}/${encodeURIComponent(s.repo)}`;
+}
+
 function escapeHtml(s) {
   return String(s).replace(/[&<>"']/g, (c) => ({
     '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
@@ -298,10 +338,15 @@ function renderSpaces() {
           <div class="font-semibold truncate">${escapeHtml(s.name)}</div>
           <a href="${escapeHtml(s.url)}" target="_blank" rel="noopener"
              class="text-xs text-indigo-600 hover:underline font-mono break-all">${escapeHtml(s.url)}</a>
+          <div>
+            <a href="${escapeHtml(hfPageUrl(s))}" target="_blank" rel="noopener"
+               class="text-xs text-slate-500 hover:text-indigo-600 hover:underline font-mono break-all">管理页: ${escapeHtml(hfPageUrl(s))}</a>
+          </div>
         </div>
-        ${badge(s.lastStatus, s.enabled)}
+        ${s.enabled ? stageBadge(s.lastStage) : badge(s.lastStatus, s.enabled)}
       </div>
       <div class="text-xs text-slate-500 space-y-1 my-3">
+        <div>真实状态: ${stageBadge(s.lastStage)}${s.lastStageAt ? ` · 检测于 ${fmtRelative(s.lastStageAt)}` : ''}</div>
         <div>间隔: <span class="font-mono">${s.intervalMinutes}</span> 分钟${s.autoRestart ? ' · 自动重启' : ''}</div>
         <div>上次保活: ${fmtRelative(s.lastRunAt)}</div>
       </div>
@@ -455,6 +500,7 @@ document.getElementById('btn-clear-token').addEventListener('click', async () =>
 
 // ---------- Logs Drawer ----------
 const drawerLogs = document.getElementById('drawer-logs');
+document.getElementById('btn-task-logs').addEventListener('click', openTaskLogs);
 
 async function openLogs(space) {
   document.getElementById('drawer-title').textContent = '· ' + space.name;
@@ -463,6 +509,19 @@ async function openLogs(space) {
   try {
     const logs = await api(`/api/spaces/${space.id}/logs`);
     renderLogs(logs);
+  } catch (e) {
+    document.getElementById('drawer-logs-body').innerHTML =
+      `<p class="text-red-600 text-center py-10">加载失败: ${escapeHtml(e.message)}</p>`;
+  }
+}
+
+async function openTaskLogs() {
+  document.getElementById('drawer-title').textContent = '· 任务日志';
+  document.getElementById('drawer-logs-body').innerHTML = '<p class="text-slate-400 text-center py-10">加载中...</p>';
+  drawerLogs.classList.remove('closed');
+  try {
+    const logs = await api('/api/task-logs');
+    renderTaskLogs(logs);
   } catch (e) {
     document.getElementById('drawer-logs-body').innerHTML =
       `<p class="text-red-600 text-center py-10">加载失败: ${escapeHtml(e.message)}</p>`;
@@ -485,10 +544,37 @@ function renderLogs(logs) {
           <tr class="border-b border-slate-100 align-top">
             <td class="py-2 pr-2 whitespace-nowrap">${new Date(l.ts).toLocaleString()}</td>
             <td class="pr-2">${escapeHtml(l.action)}</td>
-            <td class="pr-2">${l.httpStatus ?? l.stage ?? '-'}</td>
+            <td class="pr-2">${l.stage ? escapeHtml(stageLabel(l.stage)) : (l.httpStatus ?? '-')}</td>
             <td class="pr-2">${l.durationMs} ms</td>
           </tr>
           ${l.error ? `<tr class="border-b border-slate-100"><td colspan="4" class="pb-2 text-red-600">${escapeHtml(l.error)}</td></tr>` : ''}
+        `).join('')}
+      </tbody>
+    </table>
+  `;
+}
+
+function renderTaskLogs(logs) {
+  const body = document.getElementById('drawer-logs-body');
+  if (!logs || logs.length === 0) {
+    body.innerHTML = '<p class="text-slate-400 text-center py-10">尚无任务日志</p>';
+    return;
+  }
+  body.innerHTML = `
+    <table class="w-full text-xs">
+      <thead class="text-slate-500 border-b border-slate-200">
+        <tr><th class="text-left py-2 pr-2">时间</th><th class="text-left pr-2">到期/总数</th><th class="text-left pr-2">成功</th><th class="text-left pr-2">失败</th><th class="text-left pr-2">耗时</th></tr>
+      </thead>
+      <tbody>
+        ${logs.map((l) => `
+          <tr class="border-b border-slate-100 align-top">
+            <td class="py-2 pr-2 whitespace-nowrap">${new Date(l.ts).toLocaleString()}</td>
+            <td class="pr-2">${l.due}/${l.total}</td>
+            <td class="pr-2 text-green-700">${l.succeeded}</td>
+            <td class="pr-2 ${l.failed ? 'text-red-600' : ''}">${l.failed}</td>
+            <td class="pr-2">${l.durationMs} ms</td>
+          </tr>
+          ${l.error ? `<tr class="border-b border-slate-100"><td colspan="5" class="pb-2 text-red-600">${escapeHtml(l.error)}</td></tr>` : ''}
         `).join('')}
       </tbody>
     </table>

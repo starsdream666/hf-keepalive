@@ -20,6 +20,8 @@ export interface Space {
   autoRestart: boolean;
   lastRunAt: number | null;
   lastStatus: 'ok' | 'restart' | 'error' | null;
+  lastStage?: string | null;
+  lastStageAt?: number | null;
   createdAt: number;
 }
 
@@ -33,6 +35,17 @@ export interface LogEntry {
   action: 'get' | 'restart' | 'skip';
   httpStatus?: number;
   stage?: string;
+  durationMs: number;
+  error?: string;
+}
+
+export interface TaskLogEntry {
+  ts: number;
+  action: 'tick';
+  total: number;
+  due: number;
+  succeeded: number;
+  failed: number;
   durationMs: number;
   error?: string;
 }

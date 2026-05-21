@@ -16,6 +16,7 @@ const lastRestartAt = new Map<string, number>();
  */
 export async function keepAlive(env: Env, space: Space): Promise<LogEntry> {
   const start = Date.now();
+  const cfg = await getConfig(env);
   let entry: LogEntry;
 
   try {
@@ -36,13 +37,13 @@ export async function keepAlive(env: Env, space: Space): Promise<LogEntry> {
       };
       space.lastStatus = 'ok';
     } else if (res.status >= 500 || res.status === 503) {
-      entry = await tryRestart(env, space, {
+      entry = {
         ts: Date.now(),
         action: 'get',
         httpStatus: res.status,
         durationMs,
         error: `HTTP ${res.status}`,
-      });
+      };
     } else {
       // 4xx：Space 可能存在但路由 404，对保活而言已是活动；记为 get 成功
       entry = {
@@ -56,13 +57,15 @@ export async function keepAlive(env: Env, space: Space): Promise<LogEntry> {
   } catch (err) {
     const durationMs = Date.now() - start;
     const errMsg = err instanceof Error ? err.message : String(err);
-    entry = await tryRestart(env, space, {
+    entry = {
       ts: Date.now(),
       action: 'get',
       durationMs,
       error: errMsg,
-    });
+    };
   }
+
+  entry = await detectRuntimeAndMaybeRestart(env, space, entry, cfg.hfToken);
 
   // 根据最终 entry 决定 lastStatus
   if (entry.action === 'restart' && !entry.error) {
@@ -78,37 +81,61 @@ export async function keepAlive(env: Env, space: Space): Promise<LogEntry> {
   return entry;
 }
 
-async function tryRestart(
+async function detectRuntimeAndMaybeRestart(
   env: Env,
   space: Space,
   baseEntry: LogEntry,
+  token?: string,
 ): Promise<LogEntry> {
-  if (!space.autoRestart) return baseEntry;
-  const cfg = await getConfig(env);
-  if (!cfg.hfToken) {
-    return { ...baseEntry, error: `${baseEntry.error ?? 'fetch failed'}; no HF token` };
+  let entry = baseEntry;
+  let stage = entry.stage;
+
+  try {
+    const rt = await getRuntime(space.namespace, space.repo, token);
+    stage = rt.stage;
+    entry = { ...entry, stage };
+    space.lastStage = stage;
+    space.lastStageAt = Date.now();
+  } catch (err) {
+    const errMsg = err instanceof Error ? err.message : String(err);
+    if (entry.error) {
+      entry = { ...entry, error: `${entry.error}; runtime status failed: ${errMsg}` };
+    }
   }
+
+  if (!space.autoRestart) return entry;
+  if (!entry.error && (!stage || !needsRestart(stage))) return entry;
+  if (!token) return { ...entry, error: `${entry.error ?? 'needs restart'}; no HF token` };
+
   const cooldown = lastRestartAt.get(space.id);
   if (cooldown && Date.now() - cooldown < RESTART_COOLDOWN_MS) {
-    return { ...baseEntry, error: `${baseEntry.error ?? 'fetch failed'}; restart cooldown` };
+    return { ...entry, error: `${entry.error ?? 'needs restart'}; restart cooldown` };
   }
 
   try {
-    const rt = await getRuntime(space.namespace, space.repo, cfg.hfToken);
-    if (!needsRestart(rt.stage)) {
-      return { ...baseEntry, stage: rt.stage };
+    if (!stage) {
+      const rt = await getRuntime(space.namespace, space.repo, token);
+      stage = rt.stage;
+      space.lastStage = stage;
+      space.lastStageAt = Date.now();
+      entry = { ...entry, stage };
+    }
+    if (!needsRestart(stage)) {
+      return entry;
     }
     const restartStart = Date.now();
-    await restartSpace(space.namespace, space.repo, cfg.hfToken);
+    await restartSpace(space.namespace, space.repo, token);
     lastRestartAt.set(space.id, Date.now());
+    space.lastStage = 'APP_STARTING';
+    space.lastStageAt = Date.now();
     return {
       ts: Date.now(),
       action: 'restart',
-      stage: rt.stage,
-      durationMs: baseEntry.durationMs + (Date.now() - restartStart),
+      stage,
+      durationMs: entry.durationMs + (Date.now() - restartStart),
     };
   } catch (err) {
     const errMsg = err instanceof Error ? err.message : String(err);
-    return { ...baseEntry, error: `${baseEntry.error ?? ''}; restart failed: ${errMsg}` };
+    return { ...entry, error: `${entry.error ?? ''}; restart failed: ${errMsg}` };
   }
 }

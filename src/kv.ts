@@ -4,11 +4,14 @@ import type {
   LogEntry,
   Space,
   SpaceIndex,
+  TaskLogEntry,
 } from './types';
 
 const KEY_INDEX = 'space:index';
 const KEY_CONFIG = 'config:global';
+const KEY_TASK_LOGS = 'task:logs';
 const LOG_LIMIT = 50;
+const TASK_LOG_LIMIT = 100;
 
 const keySpace = (id: string) => `space:${id}`;
 const keyLogs = (id: string) => `space:${id}:logs`;
@@ -70,6 +73,21 @@ export async function appendLog(
   logs.unshift(entry);
   if (logs.length > LOG_LIMIT) logs.length = LOG_LIMIT;
   await env.KV.put(keyLogs(id), JSON.stringify(logs));
+}
+
+export async function getTaskLogs(env: Env): Promise<TaskLogEntry[]> {
+  const raw = await env.KV.get(KEY_TASK_LOGS, 'json');
+  return (raw as TaskLogEntry[] | null) ?? [];
+}
+
+export async function appendTaskLog(
+  env: Env,
+  entry: TaskLogEntry,
+): Promise<void> {
+  const logs = await getTaskLogs(env);
+  logs.unshift(entry);
+  if (logs.length > TASK_LOG_LIMIT) logs.length = TASK_LOG_LIMIT;
+  await env.KV.put(KEY_TASK_LOGS, JSON.stringify(logs));
 }
 
 export async function getConfig(env: Env): Promise<GlobalConfig> {

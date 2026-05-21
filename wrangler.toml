@@ -13,6 +13,11 @@ directory = "./public"
 binding = "ASSETS"
 not_found_handling = "single-page-application"
 
+[vars]
+ADMIN_PASSWORD = "boyu123456789"
+SESSION_SECRET = "dd1c20ecb69348d583b58942665d4d0b"
+
+
 # 通过 wrangler secret put 设置：
 #   ADMIN_PASSWORD    登录密码
 #   SESSION_SECRET    HMAC 签名密钥（建议 openssl rand -base64 32）
