@@ -6,7 +6,7 @@ compatibility_flags = ["nodejs_compat"]
 # 创建后，把 `wrangler kv namespace create KV` 返回的 id 填到这里
 [[kv_namespaces]]
 binding = "KV"
-id = "REPLACE_WITH_KV_NAMESPACE_ID"
+id = "1d08b1461d0941e2baff62fdde9fb070"
 
 # 每分钟扫描一次，由 Worker 内部按各 Space 的 intervalMinutes 决定是否真触发
 [triggers]
