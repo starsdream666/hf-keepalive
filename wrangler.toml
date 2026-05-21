@@ -6,7 +6,7 @@ compatibility_flags = ["nodejs_compat"]
 # 创建后，把 `wrangler kv namespace create KV` 返回的 id 填到这里
 [[kv_namespaces]]
 binding = "KV"
-id = "dd1c20ecb69348d583b58942665d4d0b"
+id = "01501527dc7a4f5c91ea73325c0a805e"
 
 [assets]
 directory = "./public"
