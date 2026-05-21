@@ -8,10 +8,6 @@ compatibility_flags = ["nodejs_compat"]
 binding = "KV"
 id = "dd1c20ecb69348d583b58942665d4d0b"
 
-# 每分钟扫描一次，由 Worker 内部按各 Space 的 intervalMinutes 决定是否真触发
-[triggers]
-crons = ["* * * * *"]
-
 [assets]
 directory = "./public"
 binding = "ASSETS"

@@ -6,14 +6,15 @@
 
 - 添加 / 编辑 / 删除多个 HuggingFace Space
 - 为每个 Space 独立设置保活间隔（分钟级）、启用开关、autoRestart
-- 每分钟由 Cron 扫描，按 interval 触发 HTTP GET 保活
+- 登录面板后由浏览器后台轮询触发扫描，按 interval 触发 HTTP GET 保活
 - 检测到 Space 已休眠 / 停止时，自动调用 HF Restart API（需 write token）
+- 填入 HuggingFace Token 后自动同步当前账号及组织下的 Space
 - 单密码登录，HMAC 签名 cookie 维持会话
 - 每个 Space 保留最近 50 条保活历史，可在 UI 中查看
 
 ## 技术栈
 
-- Cloudflare Workers（fetch + scheduled handler）
+- Cloudflare Workers（fetch API）
 - Cloudflare KV（空间配置、日志、限流）
 - Workers Static Assets（托管单文件前端）
 - Tailwind CSS via CDN + vanilla JS（无构建步骤）
@@ -88,14 +89,12 @@
      - 或访问 [random.org/strings](https://www.random.org/strings/) 取一段 64 字符的十六进制
 4. 两个 Secret 加完后，CF 会自动触发一次重新部署。
 
-#### A5. 验证 KV 与 Cron 绑定
+#### A5. 验证 KV 绑定
 
 回到 Worker 详情页：
 
 - **Settings → Bindings**：应当看到一条 `KV` 绑定（变量名 `KV`，指向你创建的 `hf-keepalive-kv` namespace）。如果没有，手动 **Add → KV namespace**：变量名 `KV`，选择刚才那个 namespace，保存。
-- **Settings → Triggers** 或 **Triggers → Cron Triggers**：应当看到 `* * * * *`，每分钟触发。这是 `wrangler.toml` 中 `[triggers]` 自动同步过来的。
-
-如果发现没自动同步，可以手动 **Add Cron Trigger**，表达式填 `* * * * *`。
+- 本项目不再使用 Cloudflare Cron Trigger；登录面板保持打开时，前端会定期调用 `/api/tick` 扫描到期 Space。
 
 #### A6. 访问与登录
 
@@ -151,10 +150,10 @@ npx wrangler deploy
 npx wrangler dev
 ```
 
-默认在 `http://localhost:8787` 运行。手动触发 cron：
+默认在 `http://localhost:8787` 运行。登录后可由前端自动触发扫描；也可以手动调用扫描接口：
 
 ```bash
-curl "http://localhost:8787/__scheduled?cron=*+*+*+*+*"
+curl -X POST "http://localhost:8787/api/tick" -H "cookie: session=<登录后的 cookie>"
 ```
 
 > 本地 dev 模式下，`wrangler secret put` 设置的 Secret 不会注入。请在项目根创建 `.dev.vars`：
@@ -165,19 +164,20 @@ curl "http://localhost:8787/__scheduled?cron=*+*+*+*+*"
 
 ## 使用
 
-1. 登录后点击右下角 `+` 添加 Space，URL 支持三种格式：
+1. 登录后可先在「设置」中填入 HuggingFace Token，系统会自动同步当前账号及组织下的 Space。
+2. 也可以点击右下角 `+` 手动添加 Space，URL 支持三种格式：
    - 完整 `https://user-space.hf.space`
    - 仓库路径 `user/space`
    - HF 页面 `https://huggingface.co/spaces/user/space`
-2. 设置保活间隔（建议 5-30 分钟，HF 免费 Space 实际 48h 才 sleep）。
-3. 如需自动 restart 功能，在「设置」中填入 HuggingFace Token（需 write 权限）。
-4. 点击空间卡片上的「立即保活」可手动触发，结果会立即反映在卡片状态。
-5. 「日志」按钮查看该 Space 的最近 50 条保活历史。
+3. 设置保活间隔（建议 5-30 分钟，HF 免费 Space 实际 48h 才 sleep）。
+4. 如需自动 restart 功能，在「设置」中填入 HuggingFace Token（需 write 权限）。
+5. 保活扫描依赖登录后的浏览器页面后台轮询；也可点击空间卡片上的「立即保活」手动触发。
+6. 「日志」按钮查看该 Space 的最近 50 条保活历史。
 
 ## 限制
 
-- Cloudflare Workers 免费版每次 scheduled 调用最多 50 个 subrequest。本工具每个 Space 最多消耗 2 个 subrequest（GET + 可能的 runtime 查询或 restart），单次 scheduled 最多并行处理 ~25 个 Space。
-- Cron 最小粒度 1 分钟，所以保活间隔下限 1 分钟。
+- 不再依赖 Cloudflare Cron，因此无人打开面板时不会自动扫描；如需全天候运行，请保持一个已登录页面或外部监控定期 POST `/api/tick`。
+- 本工具每个 Space 最多消耗 2 个 subrequest（GET + 可能的 runtime 查询或 restart），单次扫描默认最多并行处理 5 个 Space。
 - KV 写入有最终一致性，UI 刚保存的修改可能在另一个边缘节点上略有延迟。
 - 免费 `cpu-basic` 硬件 sleep 时间固定 48 小时，不可通过 API 配置。本工具的作用是在 48h 临近前主动 ping 保活。
 
@@ -191,12 +191,13 @@ curl "http://localhost:8787/__scheduled?cron=*+*+*+*+*"
 ├── public/
 │   └── index.html        # 单文件前端
 └── src/
-    ├── index.ts          # fetch / scheduled 入口
+    ├── index.ts          # fetch 入口
     ├── router.ts         # API 路由分发
     ├── auth.ts           # HMAC cookie 认证
     ├── kv.ts             # KV 读写封装
     ├── keepalive.ts      # 单 Space 保活动作
-    ├── scheduler.ts      # cron 调度
+    ├── scheduler.ts      # 到期 Space 扫描
+    ├── importer.ts       # 根据 HF Token 同步 Space
     ├── hf.ts             # HuggingFace API
     ├── utils.ts          # URL 归一化等
     └── types.ts          # 类型定义

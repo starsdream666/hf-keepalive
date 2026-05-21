@@ -114,7 +114,7 @@
              placeholder="hf_..." autocomplete="off" />
       <span id="set-hftoken-hint" class="text-xs text-slate-500"></span>
     </label>
-    <p class="text-xs text-slate-500">Token 需要 write 权限，仅在 autoRestart 功能下使用。保留为空可清除已保存的 token。</p>
+    <p class="text-xs text-slate-500">Token 需要 write 权限。保存后会自动同步当前账号及组织下的 Space；保留为空提交不会修改已保存 token。</p>
     <p id="settings-error" class="text-sm text-red-600 mt-3 hidden"></p>
     <div class="flex justify-between mt-5">
       <button type="button" id="btn-clear-token" class="px-4 py-2 text-red-600 hover:bg-red-50 rounded-lg">清除 Token</button>
@@ -177,6 +177,7 @@ function showMain() {
   viewLogin.classList.add('hidden');
   viewMain.classList.remove('hidden');
   refreshSpaces();
+  runDueSpaces();
 }
 
 async function init() {
@@ -222,6 +223,7 @@ document.querySelectorAll('[data-close]').forEach((el) => {
 // ---------- Space List ----------
 let spaces = [];
 let pollTimer = null;
+let tickTimer = null;
 
 async function refreshSpaces() {
   try {
@@ -234,7 +236,24 @@ async function refreshSpaces() {
 
 function startPolling() {
   if (pollTimer) clearInterval(pollTimer);
+  if (tickTimer) clearInterval(tickTimer);
   pollTimer = setInterval(refreshSpaces, 30000);
+  tickTimer = setInterval(runDueSpaces, 60000);
+}
+
+async function runDueSpaces() {
+  const lockKey = 'hf-keepalive-tick-lock';
+  const now = Date.now();
+  const lockUntil = parseInt(localStorage.getItem(lockKey) || '0', 10);
+  if (Number.isFinite(lockUntil) && lockUntil > now) return;
+  const myLock = String(now + 55000);
+  localStorage.setItem(lockKey, myLock);
+  try {
+    await api('/api/tick', { method: 'POST' });
+    await refreshSpaces();
+  } catch (e) {
+    if (e.message !== 'unauthorized') console.error(e);
+  }
 }
 
 function fmtRelative(ts) {
@@ -397,6 +416,7 @@ document.getElementById('settings-form').addEventListener('submit', async (e) =>
   e.preventDefault();
   const token = document.getElementById('set-hftoken').value.trim();
   const err = document.getElementById('settings-error');
+  const submit = e.submitter || document.querySelector('#settings-form button[type="submit"]');
   err.classList.add('hidden');
   if (!token) {
     // 空提交不动 token —— 直接关闭
@@ -404,11 +424,24 @@ document.getElementById('settings-form').addEventListener('submit', async (e) =>
     return;
   }
   try {
-    await api('/api/config', { method: 'PUT', body: JSON.stringify({ hfToken: token }) });
+    if (submit) {
+      submit.disabled = true;
+      submit.textContent = '同步中...';
+    }
+    const result = await api('/api/config', { method: 'PUT', body: JSON.stringify({ hfToken: token }) });
     modalSettings.classList.add('hidden');
+    await refreshSpaces();
+    if (result.sync) {
+      alert(`Token 已保存。发现 ${result.sync.found} 个 Space，新增 ${result.sync.imported} 个，更新 ${result.sync.updated} 个。`);
+    }
   } catch (e) {
     err.textContent = e.message;
     err.classList.remove('hidden');
+  } finally {
+    if (submit) {
+      submit.disabled = false;
+      submit.textContent = '保存';
+    }
   }
 });
 

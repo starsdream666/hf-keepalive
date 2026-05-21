@@ -4,6 +4,7 @@ import {
   issueSessionCookie,
   safeEqual,
 } from './auth';
+import { importSpacesFromHfToken } from './importer';
 import { keepAlive } from './keepalive';
 import {
   addSpace,
@@ -16,6 +17,7 @@ import {
   putConfig,
   putSpace,
 } from './kv';
+import { runScheduler } from './scheduler';
 import type { Env, Space, SpaceInput } from './types';
 import {
   clientIp,
@@ -52,6 +54,9 @@ export async function handleApi(
   if (pathname === '/api/me' && req.method === 'GET') {
     return jsonResponse({ authed: true });
   }
+  if (pathname === '/api/tick' && req.method === 'POST') {
+    return jsonResponse(await runScheduler(env, Date.now()));
+  }
   if (pathname === '/api/spaces') {
     if (req.method === 'GET') return jsonResponse(await listSpaces(env));
     if (req.method === 'POST') return handleCreateSpace(req, env);
@@ -80,6 +85,9 @@ export async function handleApi(
       });
     }
     if (req.method === 'PUT') return handlePutConfig(req, env);
+  }
+  if (pathname === '/api/config/sync-spaces' && req.method === 'POST') {
+    return handleSyncSpaces(env);
   }
 
   return errorResponse(404, 'not found');
@@ -196,9 +204,30 @@ async function handlePutConfig(req: Request, env: Env): Promise<Response> {
   const cur = await getConfig(env);
   const token = body.hfToken;
   if (token === undefined) return errorResponse(400, 'hfToken field required');
+  if (!token) {
+    await putConfig(env, {
+      hfToken: undefined,
+      updatedAt: Date.now(),
+    });
+    return jsonResponse({ ok: true, hasToken: false, prevHadToken: !!cur.hfToken });
+  }
+
+  const hfToken = String(token);
+  const sync = await importSpacesFromHfToken(env, hfToken);
   await putConfig(env, {
-    hfToken: token ? String(token) : undefined,
+    hfToken,
     updatedAt: Date.now(),
   });
-  return jsonResponse({ ok: true, hasToken: !!token, prevHadToken: !!cur.hfToken });
+  return jsonResponse({
+    ok: true,
+    hasToken: true,
+    prevHadToken: !!cur.hfToken,
+    sync,
+  });
+}
+
+async function handleSyncSpaces(env: Env): Promise<Response> {
+  const cfg = await getConfig(env);
+  if (!cfg.hfToken) return errorResponse(400, 'HF token not configured');
+  return jsonResponse(await importSpacesFromHfToken(env, cfg.hfToken));
 }
